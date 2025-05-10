@@ -4,45 +4,94 @@ namespace Darwinnatha\EnvManager;
 
 class EnvManager
 {
-    public function updateOrCreateEnvVariable(string $key, string $value, ?string $envPath)
+    /**
+     * Set a value in the .env file
+     *
+     * @param string $key
+     * @param string $value
+     * @param string|null $envPath
+     * @throws \Exception
+     */
+    public function set(string $key, string $value, ?string $envPath = null): void
     {
-        if (is_null($envPath)) {
-            $envPath = base_path('.env');
-        }else{
-            // verify if the path is a file and not a directory
-            if (is_dir($envPath)) {
-                throw new \Exception('The provided path is a directory, not a file.');
-            }
-            //verify if the file exists
-            if (!file_exists($envPath)) {
-                throw new \Exception('The provided file does not exist.');
-            }
+        $envPath = $this->resolveEnvPath($envPath);
+
+        $envContent = file_get_contents($envPath);
+        $keyPattern = "/^{$key}=.*/m";
+        $value = '"' . trim($value) . '"';
+
+        if (preg_match($keyPattern, $envContent)) {
+            $newEnvContent = preg_replace($keyPattern, "{$key}={$value}", $envContent);
+        } else {
+            $newEnvContent = rtrim($envContent) . "\n{$key}={$value}\n";
+        }
+
+        if (file_put_contents($envPath, $newEnvContent) === false) {
+            throw new \Exception('Failed to write to .env file');
+        }
+    }
+
+    /**
+     * Remove a key from the .env file
+     *
+     * @param string $key
+     * @param string|null $envPath
+     * @throws \Exception
+     */
+    public static function remove(string $key, ?string $envPath = null): void
+    {
+        $envPath = (new self())->resolveEnvPath($envPath, false);
+
+        if (!file_exists($envPath)) {
+            return;
+        }
+
+        $envContent = file_get_contents($envPath);
+        $keyPattern = "/^{$key}=.*(\r?\n)?/";
+        $newEnvContent = preg_replace($keyPattern, '', $envContent);
+
+        if (file_put_contents($envPath, trim($newEnvContent) . "\n") === false) {
+            throw new \Exception('Failed to write to .env file');
+        }
+    }
+
+    /**
+     * Resolve and prepare the .env file path
+     *
+     * @param string|null $envPath
+     * @param bool $createIfMissing
+     * @return string
+     * @throws \Exception
+     */
+    protected function resolveEnvPath(?string $envPath, bool $createIfMissing = true): string
+    {
+        $envPath = $envPath ?? base_path('.env');
+
+        if (is_dir($envPath)) {
+            throw new \Exception('The provided path is a directory, not a file.');
         }
 
         if (!file_exists($envPath)) {
-            throw new \Exception('.env file does not exist.');
+            if (!$createIfMissing) return $envPath;
+
+            $examplePath = str_replace('.env', '.env.example', $envPath);
+            if (!file_exists($examplePath)) {
+                throw new \Exception('Neither .env nor .env.example files exist.');
+            }
+
+            if (!copy($examplePath, $envPath)) {
+                throw new \Exception('Failed to create .env file from .env.example');
+            }
         }
 
-        // Read the .env file
-        $envContent = file_get_contents($envPath);
+        return $envPath;
+    }
 
-        // Ver
-        $keyExists = preg_match("/^{$key}=.*/m", $envContent);
-
-        // Préparer la nouvelle ligne à écrire
-        $value = '"' . trim($value) . '"'; // Vous pouvez adapter cette ligne selon le format attendu des valeurs
-
-        if ($keyExists) {
-            $newEnvContent = preg_replace(
-                "/^{$key}=.*/m",
-                "{$key}={$value}",
-                $envContent
-            );
-        } else { 
-            $newEnvContent = $envContent. "\n{$key}={$value}";
-            // $newEnvContent =  "{$key}={$value}". PHP_EOL . $envContent;
-        }
-
-        file_put_contents($envPath, $newEnvContent);
+    /**
+     * @deprecated use set() instead
+     */
+    public function updateOrCreateEnvVariable(string $key, string $value, ?string $envPath): void
+    {
+        $this->set($key, $value, $envPath);
     }
 }

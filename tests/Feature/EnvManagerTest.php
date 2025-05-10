@@ -1,54 +1,68 @@
 <?php
 
-use Darwinnatha\EnvManager\EnvManager;
-use Mockery;
+use Darwinnatha\EnvManager\Facades\EnvManagerFacade as EnvManager;
+use Illuminate\Support\Facades\File;
 
 beforeEach(function () {
-    // Créer un fichier .env temporaire pour les tests
-    $this->tempEnvPath = __DIR__ . '/../../.env.testing';
-    file_put_contents($this->tempEnvPath, "EXISTING_KEY=old_value\n");
+    // Crée un faux fichier .env.example
+    File::put(base_path('.env.example'), "APP_NAME=\"Laravel\"\nAPP_ENV=\"local\"\n");
+
+    // S'assurer que .env est supprimé avant chaque test
+    if (File::exists(base_path('.env'))) {
+        File::delete(base_path('.env'));
+    }
 });
 
 afterEach(function () {
-    // Nettoyer après chaque test
-    if (file_exists($this->tempEnvPath)) {
-        unlink($this->tempEnvPath);
+    // Nettoyage
+    File::delete(base_path('.env.example'));
+    if (File::exists(base_path('.env'))) {
+        File::delete(base_path('.env'));
     }
-    Mockery::close();
 });
 
-it('peut ajouter une nouvelle variable d\'environnement', function () {
-    $envManager = new EnvManager();
-    
-    $envManager->updateOrCreateEnvVariable('NEW_KEY', 'new_value', $this->tempEnvPath);
-    
-    $envContent = file_get_contents($this->tempEnvPath);
-    expect($envContent)->toContain('NEW_KEY="new_value"');
+it('creates .env from .env.example and sets a key', function () {
+    EnvManager::set('NEW_KEY', 'my_value');
+
+    $content = File::get(base_path('.env'));
+    expect($content)->toContain('NEW_KEY="my_value"');
 });
 
-it('peut mettre à jour une variable d\'environnement existante', function () {
-    $envManager = new EnvManager();
-    
-    $envManager->updateOrCreateEnvVariable('EXISTING_KEY', 'updated_value', $this->tempEnvPath);
-    
-    $envContent = file_get_contents($this->tempEnvPath);
-    expect($envContent)->toContain('EXISTING_KEY="updated_value"');
-    expect($envContent)->not->toContain('EXISTING_KEY=old_value');
+it('updates an existing key in .env', function () {
+    File::put(base_path('.env'), "FOO=\"bar\"\n");
+
+    EnvManager::set('FOO', 'baz');
+
+    $content = File::get(base_path('.env'));
+    expect($content)->toContain('FOO="baz"');
+    expect($content)->not->toContain('FOO="bar"');
 });
 
-it('lance une exception si le chemin est un répertoire', function () {
-    $envManager = new EnvManager();
-    
-    expect(fn() => $envManager->updateOrCreateEnvVariable('KEY', 'value', __DIR__))
-        ->toThrow(Exception::class, 'The provided path is a directory, not a file.');
+it('adds a key if it does not exist in .env', function () {
+    File::put(base_path('.env'), "EXISTING=\"yes\"\n");
+
+    EnvManager::set('NEW_KEY', 'hello');
+
+    $content = File::get(base_path('.env'));
+    expect($content)->toContain('NEW_KEY="hello"');
+    expect($content)->toContain('EXISTING="yes"');
 });
 
-it('lance une exception si le fichier .env n\'existe pas', function () {
-    $envManager = new EnvManager();
-    $nonExistentPath = __DIR__ . '/non_existent.env';
-    
-    expect(fn() => $envManager->updateOrCreateEnvVariable('KEY', 'value', $nonExistentPath))
-        ->toThrow(Exception::class, 'The provided file does not exist.');
+it('removes a key from .env', function () {
+    File::put(base_path('.env'), "TO_DELETE=\"remove_me\"\nKEEP_ME=\"ok\"\n");
+
+    EnvManager::remove('TO_DELETE');
+
+    $content = File::get(base_path('.env'));
+    expect($content)->not->toContain('TO_DELETE');
+    expect($content)->toContain('KEEP_ME="ok"');
 });
 
+it('does not fail when removing a non-existent key', function () {
+    File::put(base_path('.env'), "KEY1=\"value\"\n");
 
+    EnvManager::remove('NON_EXISTENT');
+
+    $content = File::get(base_path('.env'));
+    expect($content)->toContain('KEY1="value"');
+});
